@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { openDb } from './db.js';
 import { parseYouTube, parsePlaylist, parseTime } from './lib/youtube.js';
 import { DEFAULT_SCHEDULE, normalizeSchedule, screenState, makeOverride, timeLabel } from './lib/schedule.js';
+import { kioskControl, normalizeClicks } from './lib/kiosk.js';
 import { parseWebInput, probe, extractTitle, WEB_KINDS, MAX_HTML_BYTES } from './lib/web.js';
 import { searchLibrary, resolveAsset, resolveApod, resolveEpic, resolveChannelLive } from './lib/nasa.js';
 
@@ -17,6 +18,7 @@ try { process.loadEnvFile(join(root, '.env')); } catch { /* no .env is fine */ }
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const db = openDb(process.env.DB_FILE || join(root, 'data', 'window.db'));
+const kiosk = kioskControl(Number(process.env.KIOSK_DEBUG_PORT || 9222));
 const presets = JSON.parse(readFileSync(join(root, 'presets.json'), 'utf8'));
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
@@ -236,6 +238,10 @@ app.patch('/api/items/:id', async (req, reply) => {
     if (db.getItem(id).type !== 'web') throw bad('Only web items can reload.');
     patch.payload = { ...(patch.payload ?? db.getItem(id).payload), reloadSec: optInt(b.reloadSec) };
   }
+  if ('clicks' in b) {
+    if (db.getItem(id).payload.kind !== 'page') throw bad('Only web pages can have clicks.');
+    patch.payload = { ...(patch.payload ?? db.getItem(id).payload), clicks: normalizeClicks(b.clicks) };
+  }
   if ('start' in b) {
     if (!START_TYPES.has(db.getItem(id).type)) throw bad('This item has no start time.');
     const raw = String(b.start ?? '').trim();
@@ -291,6 +297,37 @@ app.post('/api/items/:id/error', async (req) => {
   const item = db.getItem(id);
   const msg = String(req.body?.error ?? 'Playback failed').slice(0, 300);
   if (item && item.error !== msg) { db.updateItem(id, { error: msg }); changed(); }
+  return { ok: true };
+});
+
+// --- Kiosk remote control -------------------------------------------------------
+// Clicks inside web pages, and screenshots of the TV for placing them. Only the
+// kiosk's own player (on the Pi, so from localhost) may ask for clicks: a player
+// open on a laptop would otherwise click the TV at the wrong moments.
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+app.post('/api/kiosk/click', async (req) => {
+  if (!LOOPBACK.has(req.ip) || isHiddenPlayer(req.body?.player)) return { ok: true, ignored: 'not the kiosk player' };
+  const [c] = normalizeClicks([req.body]);
+  await kiosk.click(c.x, c.y, c.double);
+  return { ok: true };
+});
+app.get('/api/kiosk/screenshot', async (req, reply) => {
+  const jpeg = await kiosk.screenshot();
+  return reply.type('image/jpeg').header('Cache-Control', 'no-store').send(jpeg);
+});
+// Jump the player to an item, or run an item's clicks now (from the admin page).
+app.post('/api/items/:id/show', async (req, reply) => {
+  const item = db.getItem(Number(req.params.id));
+  if (!item) return reply.code(404).send({ error: 'Not found' });
+  if (!item.enabled) throw bad('Turn this item on first.');
+  broadcast('show-item', { id: item.id });
+  return { ok: true };
+});
+app.post('/api/items/:id/run-clicks', async (req, reply) => {
+  const item = db.getItem(Number(req.params.id));
+  if (!item) return reply.code(404).send({ error: 'Not found' });
+  if (nowPlaying?.id !== item.id) throw bad('Show this item on the TV first.');
+  broadcast('run-clicks', { id: item.id });
   return { ok: true };
 });
 

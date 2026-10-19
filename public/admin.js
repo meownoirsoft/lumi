@@ -56,8 +56,15 @@ function thumbFor(item) {
   return item.payload?.thumb ?? null;
 }
 
+// Don't rebuild the list under someone typing in it; render once they leave the field.
+let renderPending = false;
+const typing = () => list.contains(document.activeElement) && /^(INPUT|SELECT)$/.test(document.activeElement.tagName);
+list.addEventListener('focusout', () => setTimeout(() => { if (renderPending && !typing()) render(); }));
+
 function render() {
   if (dragging) return;
+  if (typing()) { renderPending = true; return; }
+  renderPending = false;
   list.replaceChildren(...items.map((item) => {
     const li = tpl.content.firstElementChild.cloneNode(true);
     li.dataset.id = item.id;
@@ -108,6 +115,8 @@ function render() {
     dur.value = item.duration_sec ?? '';
     dur.addEventListener('change', () => patch(item.id, { duration_sec: dur.value || null }));
 
+    if (item.type === 'web' && p.kind === 'page') renderClicks(item, li);
+
     const en = $('.enabled', li);
     en.checked = item.enabled;
     en.addEventListener('change', () => patch(item.id, { enabled: en.checked }));
@@ -143,6 +152,103 @@ function armDelete(id) {
 document.addEventListener('click', (e) => {
   if (confirmDeleteId != null && !e.target.closest('.del')) armDelete(null);
 });
+
+// --- Clicks in web pages --------------------------------------------------------
+const openClicks = new Set();   // items whose click editor is open (survives re-renders)
+const clickTpl = $('#click-tpl');
+
+function saveClicks(item, clicks) {
+  return patch(item.id, { clicks });
+}
+
+function renderClicks(item, li) {
+  const clicks = item.payload.clicks ?? [];
+  const toggle = $('.clicks-toggle', li);
+  const panel = $('.clicks-panel', li);
+  const open = openClicks.has(item.id);
+  toggle.hidden = false;
+  toggle.textContent = clicks.length ? `🖱 ${clicks.length} click${clicks.length === 1 ? '' : 's'} ${open ? '▴' : '▾'}` : `🖱 Add clicks ${open ? '▴' : '▾'}`;
+  toggle.setAttribute('aria-expanded', String(open));
+  panel.hidden = !open;
+  toggle.addEventListener('click', () => {
+    if (openClicks.has(item.id)) openClicks.delete(item.id); else openClicks.add(item.id);
+    render();
+  });
+  if (!open) return;
+
+  $('.clicks-list', panel).replaceChildren(...clicks.map((c, i) => {
+    const row = clickTpl.content.firstElementChild.cloneNode(true);
+    $('.c-type', row).value = c.double ? 'double' : '';
+    $('.c-x', row).value = c.x;
+    $('.c-y', row).value = c.y;
+    $('.c-after', row).value = c.after;
+    row.addEventListener('change', () => {
+      if (![...row.querySelectorAll('input')].every((el) => el.reportValidity())) return;
+      const next = clicks.map((x) => ({ ...x }));
+      next[i] = { x: Number($('.c-x', row).value), y: Number($('.c-y', row).value), after: Number($('.c-after', row).value), double: $('.c-type', row).value === 'double' };
+      saveClicks(item, next);
+    });
+    $('.c-del', row).addEventListener('click', () => saveClicks(item, clicks.filter((_, k) => k !== i)));
+    return row;
+  }));
+  $('.add-click', panel).addEventListener('click', () => saveClicks(item, [...clicks, { x: 50, y: 50, after: 5, double: false }]));
+  $('.pick', panel).addEventListener('click', () => openPicker(item));
+  $('.test', panel).addEventListener('click', (e) => busy(e.currentTarget, async () => {
+    if (!clicks.length) throw new Error('Add a click first.');
+    await api(`/api/items/${item.id}/run-clicks`, { method: 'POST' });
+    say('Clicking on the TV now.');
+  }));
+}
+
+// Screenshot picker: show the item on the TV, grab the screen, tap a spot.
+const picker = $('#picker');
+const pickerImg = $('#picker-img');
+const pickerMsg = $('#picker-msg');
+let pickerItem = null;
+
+async function takeShot() {
+  pickerMsg.textContent = 'Taking a screenshot…';
+  const res = await fetch(`/api/kiosk/screenshot?t=${Date.now()}`);
+  if (!res.ok) {
+    pickerMsg.textContent = (await res.json().catch(() => ({}))).error ?? `Screenshot failed (${res.status})`;
+    return;
+  }
+  URL.revokeObjectURL(pickerImg.src);
+  pickerImg.src = URL.createObjectURL(await res.blob());
+  $('#picker-dot').hidden = true;
+  pickerMsg.textContent = nowPlayingId === pickerItem?.id ? '' : 'The TV is showing a different item. Wait for it, then take a new screenshot.';
+}
+
+async function openPicker(item) {
+  pickerItem = item;
+  pickerImg.removeAttribute('src');
+  $('#picker-double').checked = false;
+  picker.showModal();
+  if (nowPlayingId !== item.id) {
+    pickerMsg.textContent = 'Showing it on the TV…';
+    try { await api(`/api/items/${item.id}/show`, { method: 'POST' }); } catch (e) { pickerMsg.textContent = e.message; return; }
+    // Give the page time to load and fade in.
+    await new Promise((r) => setTimeout(r, 6000));
+  }
+  if (picker.open) await takeShot();
+}
+
+pickerImg.addEventListener('click', (e) => {
+  if (!pickerItem || !pickerImg.naturalWidth) return;
+  const r = pickerImg.getBoundingClientRect();
+  const x = Math.round(((e.clientX - r.left) / r.width) * 1000) / 10;
+  const y = Math.round(((e.clientY - r.top) / r.height) * 1000) / 10;
+  const dot = $('#picker-dot');
+  dot.style.left = `${x}%`;
+  dot.style.top = `${y}%`;
+  dot.hidden = false;
+  const latest = items.find((i) => i.id === pickerItem.id) ?? pickerItem;
+  const clicks = [...(latest.payload.clicks ?? []), { x, y, after: 5, double: $('#picker-double').checked }];
+  openClicks.add(pickerItem.id);
+  saveClicks(pickerItem, clicks).then(() => setTimeout(() => picker.close(), 400));
+});
+$('#picker-refresh').addEventListener('click', (e) => busy(e.currentTarget, takeShot));
+$('#picker-cancel').addEventListener('click', () => picker.close());
 
 async function load() {
   try {

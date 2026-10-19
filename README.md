@@ -100,6 +100,7 @@ Uninstall removes the managed policy file but keeps the kiosk profile.
 | Can't open the admin page | `systemctl status digital-window` and `journalctl -u digital-window -n 50` on the Pi. Make sure your phone or laptop is on the same network. |
 | Desktop shows but no player | Check the autostart entry: `grep digital ~/.config/labwc/autostart`. You can start the player by hand with `~/digital-window/kiosk/chromium-kiosk.sh`. |
 | A web page shows blank or "refused to connect" on the Pi | Update (re-run the option B command) and reboot, so the kiosk has the extension that lets it show such pages. If it's still blank, the site may need a login or block the Pi; try the camera's direct image or video address instead. |
+| "Can't reach the kiosk browser" when picking a click spot | Update (re-run the option B command) and reboot, so the kiosk browser opens its DevTools port. The TV must be on and showing the player. |
 | A video is skipped with ⚠ in the admin page | The owner disabled embedding, or the video is private, removed or region-blocked. This can't be worked around; pick another video. |
 | APOD or EPIC fails sometimes | NASA rate-limits `DEMO_KEY`. Put your own key in `~/digital-window/.env` (`NASA_API_KEY=…`), then `sudo systemctl restart digital-window`. |
 | "An app wants to access camera devices" dialog on the TV | Choose **Deny**. The app never uses a camera. Re-run the install command (option B) and reboot; the update turns off Chromium's camera access so the dialog doesn't come back. |
@@ -144,6 +145,7 @@ Tips for camera feeds:
 - **Use the feed, not the page around it.** Many "live cam" sites wrap the picture in menus, ads and cookie banners. Right-click the picture and copy the image or video address, or find the `.m3u8` in the browser's developer tools (Network tab, filter `m3u8`). Feeds that are YouTube live streams are best added on the YouTube tab.
 - **Cameras on your own network** work with just their address, for example `192.168.1.50/video.mjpg` (it assumes `http://` for IP addresses and `.local` names). A camera that needs a password usually accepts it in the link: `http://user:pass@192.168.1.50/snapshot.jpg`. Anyone who can open the admin page can see links in the playlist.
 - **Sites that refuse to be shown inside another page** (they send `X-Frame-Options` or a CSP `frame-ancestors`) still show on the Pi: the kiosk loads a small extension ([`kiosk/frame-extension`](kiosk/frame-extension)) that lifts that restriction for embedded pages, and lets the player read HLS streams whose servers don't allow other sites (CORS). It only affects the kiosk's own browser profile. In an ordinary browser, *Open player* may show such a page blank; the admin page flags these.
+- **Pages that need a click** (a play button, or a double-click to make the camera fill the screen): open the item's **🖱 Add clicks** and use **Pick a spot on the TV…**. It shows the item on the TV, takes a screenshot, and you tap where the click should go. Each click happens a set number of seconds after the page appears (and again after each reload); **Test clicks now** runs them straight away. The clicks are real mouse clicks made through the kiosk browser's DevTools port (`KIOSK_DEBUG_PORT`, default 9222, open on the Pi itself only), so they work where a script couldn't: starting video and going fullscreen. They only work on the Pi's own screen, not in *Open player* on another computer.
 - **Sound:** videos and streams are muted, but a web page that plays sound by itself will be heard.
 - Pasted HTML runs in a sandbox with no access to the app, so it can't change the playlist.
 
@@ -198,7 +200,9 @@ Requires Node 22.13+. Data is stored in `data/window.db`, using Node's built-in 
 
 ## Security note
 
-There's no login. Anyone on your network who can reach port 3000 can edit the playlist. Keep it on a trusted home or office network, or put it behind a reverse proxy with authentication.
+There's no login. Anyone on your network who can reach port 3000 can edit the playlist, and see the TV through the click-spot screenshots. Keep it on a trusted home or office network, or put it behind a reverse proxy with authentication.
+
+The kiosk browser's DevTools port (for clicks) only accepts connections from the Pi itself, but any program running on the Pi can use it to control that browser. Don't run untrusted software on the Pi.
 
 ## Development
 

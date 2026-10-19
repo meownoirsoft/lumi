@@ -61,6 +61,8 @@ for (const customConfig of [false, true]) {
       assert.ok(args.includes('--autoplay-policy=no-user-gesture-required'));
       assert.ok(args.includes('--disable-features=Translate,WebRtcPipeWireCamera,ChromeWhatsNewUI'));
       const kioskDir = fileURLToPath(new URL('../kiosk', import.meta.url));
+      assert.ok(args.includes('--remote-debugging-port=9222'));
+      assert.ok(args.includes('--remote-debugging-address=127.0.0.1'));
       assert.ok(args.includes(`--load-extension=${kioskDir}/frame-extension,${kioskDir}/h264-extension`));
       assert.equal(statSync(profile).mode & 0o777, 0o700);
       assert.deepEqual(JSON.parse(readFileSync(prefs, 'utf8')), { exited_cleanly: true, exit_type: 'Normal' });

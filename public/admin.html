@@ -139,6 +139,7 @@
         <div class="sub"><span class="badge type"></span><span class="badge live" hidden>LIVE</span><span class="badge now" hidden>▶ Now playing</span><span class="source"></span></div>
         <div class="error" hidden></div>
         <div class="note hint" hidden></div>
+        <button class="linkish clicks-toggle" type="button" hidden aria-expanded="false"></button>
       </div>
       <div class="timing">
         <label class="start" title="Where the video starts, e.g. 90, 1:30 or 1m30s">
@@ -153,8 +154,40 @@
       </div>
       <label class="switch" title="Enabled"><input type="checkbox" class="enabled"><span></span></label>
       <button class="icon del" title="Remove" aria-label="Remove">✕</button>
+      <div class="clicks-panel" hidden>
+        <ol class="clicks-list"></ol>
+        <div class="row">
+          <button class="btn ghost small pick" type="button">Pick a spot on the TV…</button>
+          <button class="btn ghost small add-click" type="button">Add by position</button>
+          <button class="btn ghost small test" type="button">Test clicks now</button>
+        </div>
+        <p class="hint">Clicks happen on the TV, timed from when the page appears (and after each reload): for example a double-click on a camera to make it fill the screen, or a click on a play button. Positions are a percentage of the screen, so pick them on the TV.</p>
+      </div>
     </li>
   </template>
+
+  <template id="click-tpl">
+    <li class="click-row">
+      <select class="c-type"><option value="">Click</option><option value="double">Double-click</option></select>
+      <label>at <input class="c-x" type="number" min="0" max="100" step="0.1" required> % across,</label>
+      <label><input class="c-y" type="number" min="0" max="100" step="0.1" required> % down,</label>
+      <label><input class="c-after" type="number" min="0" max="3600" step="0.5" required> s after it appears</label>
+      <button class="icon c-del" type="button" title="Remove this click" aria-label="Remove this click">✕</button>
+    </li>
+  </template>
+
+  <dialog id="picker">
+    <div class="picker-head">
+      <strong>Tap where the click should go</strong>
+      <span id="picker-msg" class="hint" role="status"></span>
+    </div>
+    <div class="picker-shot"><img id="picker-img" alt="The TV screen right now"><span id="picker-dot" hidden></span></div>
+    <div class="row picker-actions">
+      <label class="check"><input id="picker-double" type="checkbox"> Double-click</label>
+      <button id="picker-refresh" class="btn ghost" type="button">New screenshot</button>
+      <button id="picker-cancel" class="btn ghost" type="button">Cancel</button>
+    </div>
+  </dialog>
 
   <script src="/vendor/Sortable.min.js"></script>
   <script src="/admin.js" type="module"></script>

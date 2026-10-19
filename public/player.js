@@ -55,6 +55,7 @@ const PLAYER_ID = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toStri
 const visible = () => document.visibilityState === 'visible';
 const hiccups = new Map();   // item id -> consecutive one-off failures
 let retryTimer = null;
+let forcedNext = null;       // item id the admin page asked to show now
 const bootedAt = Date.now();
 
 // --- helpers ------------------------------------------------------------------
@@ -282,7 +283,12 @@ async function mountVideo(layer, url, maxSec, captionText, start = 0, { hls = fa
 // A web page, framed without letting it navigate the kiosk away (no
 // allow-top-navigation). Pasted HTML also gets no same-origin access, so its
 // scripts can't reach this server's API.
-function mountPage(layer, src, seconds, reloadSec, { trusted = true } = {}) {
+//
+// clicks() returns [{ x, y, after, double }] (x/y in % of the screen), read
+// each time so edits apply to the page already on screen. The server makes
+// them through the kiosk browser (see lib/kiosk.js), timed from when the page
+// appears and again after every reload.
+function mountPage(layer, src, seconds, reloadSec, { trusted = true, clicks = () => [] } = {}) {
   const slot = makeSlot();
   const iframe = document.createElement('iframe');
   iframe.sandbox = trusted
@@ -291,6 +297,22 @@ function mountPage(layer, src, seconds, reloadSec, { trusted = true } = {}) {
   iframe.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
   iframe.src = src;
   layer.append(iframe);
+
+  let shown = false;
+  let pending = [];
+  const cancelClicks = () => { pending.forEach(clearTimeout); pending = []; };
+  // Each click at its own "after"; a test run keeps the gaps but starts now.
+  const runClicks = (now = false) => {
+    cancelClicks();
+    const list = clicks();
+    const first = now ? Math.min(...list.map((c) => c.after)) : 0;
+    for (const c of list) pending.push(setTimeout(() => clickInPage(iframe, c), (c.after - first) * 1000));
+  };
+  iframe.addEventListener('load', () => { if (shown) runClicks(); });
+  slot.shown = () => { shown = true; runClicks(); };
+  slot.runClicks = () => runClicks(true);
+  slot.onDestroy(cancelClicks);
+
   // A frame that's refused or offline still fires "load" (with an error page),
   // so this can only catch pages that never finish loading.
   slot.ready = new Promise((resolve) => iframe.addEventListener('load', resolve, { once: true }))
@@ -303,6 +325,19 @@ function mountPage(layer, src, seconds, reloadSec, { trusted = true } = {}) {
     });
   slot.onDestroy(() => { iframe.src = 'about:blank'; iframe.remove(); });
   return slot;
+}
+
+// Frames ignore the pointer (so a touch screen can't poke at them); let this
+// one take the click, then shut it out again.
+async function clickInPage(iframe, click) {
+  if (!visible()) return;
+  iframe.style.pointerEvents = 'auto';
+  iframe.dataset.clicking = Number(iframe.dataset.clicking || 0) + 1;
+  await post('/api/kiosk/click', click);
+  setTimeout(() => {
+    iframe.dataset.clicking -= 1;
+    if (Number(iframe.dataset.clicking) <= 0) iframe.style.pointerEvents = '';
+  }, 1000);
 }
 
 // A camera image: an MJPEG stream (plays by itself) or a snapshot, which is
@@ -396,8 +431,9 @@ async function mount(item, layer) {
       const reload = num(p.reloadSec, 0);
       if (p.kind === 'image') return mountFeedImage(layer, p.url, secs, reload);
       if (p.kind === 'video') return mountVideo(layer, p.url, max, null, 0, { hls: p.hls, liveSec: secs });
-      if (p.html) return mountPage(layer, `/api/items/${item.id}/html`, secs, reload, { trusted: false });
-      return mountPage(layer, p.url, secs, reload);
+      const clicks = () => playlist.find((i) => i.id === item.id)?.payload?.clicks ?? p.clicks ?? [];
+      if (p.html) return mountPage(layer, `/api/items/${item.id}/html`, secs, reload, { trusted: false, clicks });
+      return mountPage(layer, p.url, secs, reload, { clicks });
     }
     case 'epic': {
       const e = await api('/api/resolve/epic');
@@ -422,6 +458,11 @@ async function refresh() {
 
 function pickNext() {
   if (!playlist.length) return null;
+  if (forcedNext) {
+    const f = playlist.find((i) => i.id === forcedNext);
+    forcedNext = null;
+    if (f) { lastIndex = playlist.indexOf(f); return f; }
+  }
   const cur = current ? playlist.findIndex((i) => i.id === current.item.id) : -1;
   // If the current item was removed or disabled, continue from where it used to be.
   const base = cur >= 0 ? cur : lastIndex < 0 ? -1 : Math.min(lastIndex, playlist.length) - 1;
@@ -512,6 +553,7 @@ async function advance() {
     const oldLayer = layers[front];
     front = 1 - front;
     current = { item, slot };
+    slot.shown?.();
     setTimeout(() => { old?.destroy(); if (!oldLayer.classList.contains('show')) oldLayer.replaceChildren(); }, 1400);
 
     if (visible()) post('/api/now-playing', { id: item.id });
@@ -543,6 +585,15 @@ events.addEventListener('hello', (e) => {
   const { boot } = JSON.parse(e.data) ?? {};
   if (serverBoot && boot && boot !== serverBoot) location.reload();
   serverBoot ??= boot;
+});
+// "Show on TV" and "Test clicks" in the admin page.
+events.addEventListener('show-item', (e) => {
+  forcedNext = JSON.parse(e.data)?.id ?? null;
+  const go = () => (busy ? setTimeout(go, 500) : advance());
+  go();
+});
+events.addEventListener('run-clicks', (e) => {
+  if (current?.item.id === JSON.parse(e.data)?.id) current.slot.runClicks?.();
 });
 events.addEventListener('screen', (e) => setScreen(JSON.parse(e.data)?.on !== false));
 events.addEventListener('playlist-changed', async () => {

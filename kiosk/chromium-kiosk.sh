@@ -10,6 +10,9 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 setting() { sed -n "s/^$1=//p" "$HERE/../.env" 2>/dev/null | tail -1; }
 RES=$(setting KIOSK_RESOLUTION); RES=${RES:-auto}
 H264=$(setting KIOSK_H264); H264=${H264:-1}
+#   KIOSK_DEBUG_PORT  DevTools port (default 9222, localhost only) the app uses
+#                     to click inside web pages and screenshot the TV
+DEBUG_PORT=$(setting KIOSK_DEBUG_PORT); DEBUG_PORT=${DEBUG_PORT:-9222}
 
 # A profile used only by the kiosk: no saved tabs, sessions or sign-in from the
 # desktop browser, so Chromium has nothing to restore, sync or nag about.
@@ -103,4 +106,5 @@ exec "$BROWSER" \
   --deny-permission-prompts \
   --check-for-update-interval=31536000 \
   --password-store=basic \
+  --remote-debugging-address=127.0.0.1 --remote-debugging-port="$DEBUG_PORT" \
   --load-extension="$EXTENSIONS"
