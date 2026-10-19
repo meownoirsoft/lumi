@@ -536,6 +536,14 @@ document.addEventListener('visibilitychange', () => {
   post('/api/player-status', { visible: visible() });
   if (visible() && current) post('/api/now-playing', { id: current.item.id });
 });
+// The server restarted (after an update, say): reload to pick up new player
+// code. The first hello just records which server this page came from.
+let serverBoot = null;
+events.addEventListener('hello', (e) => {
+  const { boot } = JSON.parse(e.data) ?? {};
+  if (serverBoot && boot && boot !== serverBoot) location.reload();
+  serverBoot ??= boot;
+});
 events.addEventListener('screen', (e) => setScreen(JSON.parse(e.data)?.on !== false));
 events.addEventListener('playlist-changed', async () => {
   await refresh();

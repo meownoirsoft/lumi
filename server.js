@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { hostname, networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -29,6 +30,9 @@ app.addHook('onSend', async (req, reply) => {
 
 // --- Server-Sent Events hub ---------------------------------------------------
 const clients = new Set();
+// Changes on every start. Players reload when it changes, so after an update
+// they run the new code instead of the page they loaded before it.
+const BOOT_ID = randomUUID();
 let nowPlaying = null;
 // Connected player pages: id -> { ip, visible }. Only a visible player's
 // reports count, so a forgotten tab or a covered window can't flag items.
@@ -50,6 +54,7 @@ app.get('/api/events', (req, reply) => {
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
   });
+  res.write(`event: hello\ndata: ${JSON.stringify({ boot: BOOT_ID })}\n\n`);
   res.write(`event: now-playing\ndata: ${JSON.stringify(nowPlaying)}\n\n`);
   res.write(`event: screen\ndata: ${JSON.stringify(screen())}\n\n`);
   clients.add(res);
