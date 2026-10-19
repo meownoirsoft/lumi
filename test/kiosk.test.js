@@ -60,6 +60,8 @@ for (const customConfig of [false, true]) {
       assert.ok(args.includes('http://localhost:4321/player'));
       assert.ok(args.includes('--autoplay-policy=no-user-gesture-required'));
       assert.ok(args.includes('--disable-features=Translate,WebRtcPipeWireCamera,ChromeWhatsNewUI'));
+      const kioskDir = fileURLToPath(new URL('../kiosk', import.meta.url));
+      assert.ok(args.includes(`--load-extension=${kioskDir}/frame-extension,${kioskDir}/h264-extension`));
       assert.equal(statSync(profile).mode & 0o777, 0o700);
       assert.deepEqual(JSON.parse(readFileSync(prefs, 'utf8')), { exited_cleanly: true, exit_type: 'Normal' });
       assert.deepEqual(JSON.parse(readFileSync(regular, 'utf8')), { exited_cleanly: false, exit_type: 'Crashed' });

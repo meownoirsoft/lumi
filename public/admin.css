@@ -86,7 +86,7 @@ input[type=text], input[type=search], input[type=number], select {
 .row input[type=text], .row input[type=search] { flex: 1 1 260px; }
 .check { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
 
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 14px; overflow-x: auto; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 14px; overflow-x: auto; overflow-y: hidden; }
 .tabs button {
   border: 0; background: none; font: inherit; color: var(--muted); padding: 8px 12px; cursor: pointer;
   border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
@@ -110,6 +110,17 @@ input[type=text], input[type=search], input[type=number], select {
 .feed { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .feed p { margin: 2px 0 0; }
 #presets { display: grid; gap: 10px; }
+
+.web-form { display: grid; gap: 10px; }
+.web-options label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.web-options input { width: 80px; padding: 5px 6px; }
+.web-html { margin-top: 12px; }
+.web-html summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.web-html form { display: grid; gap: 8px; margin-top: 8px; }
+textarea {
+  font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: inherit; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; resize: vertical;
+}
 
 .list-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 #list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -136,9 +147,10 @@ input[type=text], input[type=search], input[type=number], select {
 .badge.now { background: var(--ok); border-color: var(--ok); color: #fff; }
 .error { font-size: 12px; color: var(--danger); margin-top: 2px; }
 .timing { display: flex; flex-wrap: wrap; gap: 6px 12px; }
-.start[hidden] { display: none; }
-.dur, .start { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 13px; }
-.dur input { width: 74px; padding: 5px 6px; }
+.start[hidden], .reload[hidden] { display: none; }
+.dur, .start, .reload { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 13px; }
+.dur input, .reload input { width: 74px; padding: 5px 6px; }
+.note { font-size: 12px; margin-top: 2px; }
 .start input { width: 64px; padding: 5px 6px; }
 
 .switch { position: relative; width: 36px; height: 20px; flex: none; }

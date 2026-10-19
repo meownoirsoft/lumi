@@ -2,12 +2,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export const ITEM_TYPES = ['youtube', 'youtube_playlist', 'nasa_image', 'nasa_video', 'apod', 'epic'];
+export const ITEM_TYPES = ['youtube', 'youtube_playlist', 'nasa_image', 'nasa_video', 'apod', 'epic', 'web'];
 
 const DEFAULT_SETTINGS = {
   still_duration_sec: '30',
   live_duration_sec: '1800',
   epic_duration_sec: '60',
+  web_duration_sec: '300',
   show_captions: '1',
 };
 

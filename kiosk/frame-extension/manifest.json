@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Digital Window: show web pages and streams in the player",
+  "version": "1.0",
+  "description": "Lets the player show web pages that ask not to be shown inside other pages (X-Frame-Options, CSP frame-ancestors). Also lets the player itself read HLS camera streams whose servers don't send CORS headers. Only installed in the kiosk's own browser profile.",
+  "permissions": ["declarativeNetRequest"],
+  "host_permissions": ["<all_urls>"],
+  "declarative_net_request": {
+    "rule_resources": [{ "id": "allow-framing", "enabled": true, "path": "rules.json" }]
+  }
+}

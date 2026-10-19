@@ -84,8 +84,13 @@ PREFS="$PROFILE/Default/Preferences"
 # all of these in software, and H.264 is by far the lightest, so video plays
 # smoothly instead of dropping frames. (YouTube's H.264 tops out at 1080p, which
 # Chromium scales up to a 4K screen.)
-EXTRA=()
-[ "$H264" = 0 ] || EXTRA+=(--load-extension="$HERE/h264-extension")
+#
+# frame-extension lets the player show web pages and camera sites that ask not
+# to be shown inside another page (X-Frame-Options / CSP frame-ancestors), and
+# lets it read HLS camera streams that don't send CORS headers. It only affects
+# this kiosk profile.
+EXTENSIONS="$HERE/frame-extension"
+[ "$H264" = 0 ] || EXTENSIONS="$EXTENSIONS,$HERE/h264-extension"
 
 BROWSER=$(command -v chromium-browser || command -v chromium)
 exec "$BROWSER" \
@@ -98,4 +103,4 @@ exec "$BROWSER" \
   --deny-permission-prompts \
   --check-for-update-interval=31536000 \
   --password-store=basic \
-  "${EXTRA[@]}"
+  --load-extension="$EXTENSIONS"

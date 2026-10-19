@@ -19,6 +19,7 @@
     "fastify": "^5.12.7"
   },
   "devDependencies": {
+    "hls.js": "^1.6.15",
     "qrcode-generator": "^1.4.4",
     "sortablejs": "^1.15.7"
   }

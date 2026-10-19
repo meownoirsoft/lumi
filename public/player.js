@@ -218,11 +218,44 @@ function mountImage(layer, url, seconds, captionText) {
   return slot;
 }
 
-function mountVideo(layer, url, maxSec, captionText, start = 0) {
+let hlsLib;
+function loadHls() {
+  hlsLib ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/vendor/hls.light.min.js';
+    s.onload = () => resolve(window.Hls);
+    s.onerror = () => { hlsLib = null; reject(new Error('Could not load the HLS player')); };
+    document.head.append(s);
+  });
+  return hlsLib;
+}
+
+// A video file, or an HLS (.m3u8) stream. A stream with no end (a live camera)
+// plays for liveSec unless maxSec is set.
+async function mountVideo(layer, url, maxSec, captionText, start = 0, { hls = false, liveSec = 0 } = {}) {
   const slot = makeSlot();
   const v = document.createElement('video');
-  Object.assign(v, { muted: true, autoplay: true, playsInline: true, preload: 'auto', src: start ? `${url}#t=${start}` : url });
+  Object.assign(v, { muted: true, autoplay: true, playsInline: true, preload: 'auto' });
   v.setAttribute('muted', '');
+  // Use the browser's own HLS support when it has it, otherwise hls.js.
+  if (hls && !v.canPlayType('application/vnd.apple.mpegurl')) {
+    const Hls = await loadHls();
+    if (!Hls.isSupported()) throw Object.assign(new Error('This browser cannot play HLS streams'), { permanent: true });
+    const h = new Hls({ startPosition: start || -1, liveDurationInfinity: true });
+    h.on(Hls.Events.ERROR, (_, d) => {
+      if (!d.fatal) return;
+      const err = new Error(d.details === 'manifestLoadError'
+        ? 'Stream unreachable, or its server doesn’t let other pages play it'
+        : `Stream error: ${d.details}`);
+      err.permanent = d.type === Hls.ErrorTypes.NETWORK_ERROR && [401, 403, 404].includes(d.response?.code);
+      slot.fail(err);
+    });
+    h.loadSource(url);
+    h.attachMedia(v);
+    slot.onDestroy(() => h.destroy());
+  } else {
+    v.src = start ? `${url}#t=${start}` : url;
+  }
   layer.append(v);
   caption(layer, captionText);
   slot.ready = new Promise((resolve, reject) => {
@@ -232,14 +265,72 @@ function mountVideo(layer, url, maxSec, captionText, start = 0) {
       err.permanent = v.error?.code === 4;
       reject(err);
     }, { once: true });
+    slot.ended.catch(reject);
     v.play().catch(() => {});
   }).then(() => {
-    if (maxSec) timer(slot, maxSec);
+    const cap = maxSec || (Number.isFinite(v.duration) ? 0 : liveSec);
+    if (cap) timer(slot, cap);
     stallWatch(slot, () => v.currentTime);
   });
   v.addEventListener('ended', slot.finish);
   v.addEventListener('error', () => slot.fail(new Error('Video playback error')));
   slot.onDestroy(() => { v.pause(); v.removeAttribute('src'); v.load(); });
+  return slot;
+}
+
+// --- Web pages & camera feeds ---------------------------------------------------
+// A web page, framed without letting it navigate the kiosk away (no
+// allow-top-navigation). Pasted HTML also gets no same-origin access, so its
+// scripts can't reach this server's API.
+function mountPage(layer, src, seconds, reloadSec, { trusted = true } = {}) {
+  const slot = makeSlot();
+  const iframe = document.createElement('iframe');
+  iframe.sandbox = trusted
+    ? 'allow-scripts allow-same-origin allow-forms allow-presentation'
+    : 'allow-scripts allow-forms';
+  iframe.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
+  iframe.src = src;
+  layer.append(iframe);
+  // A frame that's refused or offline still fires "load" (with an error page),
+  // so this can only catch pages that never finish loading.
+  slot.ready = new Promise((resolve) => iframe.addEventListener('load', resolve, { once: true }))
+    .then(() => {
+      timer(slot, seconds);
+      if (reloadSec) {
+        const iv = setInterval(() => { iframe.src = src; }, reloadSec * 1000);
+        slot.onDestroy(() => clearInterval(iv));
+      }
+    });
+  slot.onDestroy(() => { iframe.src = 'about:blank'; iframe.remove(); });
+  return slot;
+}
+
+// A camera image: an MJPEG stream (plays by itself) or a snapshot, which is
+// fetched again every reloadSec and swapped in once loaded, so it never flickers.
+function mountFeedImage(layer, url, seconds, reloadSec) {
+  const slot = makeSlot();
+  const img = new Image();
+  img.className = 'still';
+  img.src = url;
+  layer.append(img);
+  // decode() doesn't settle for MJPEG streams, so wait for the first frame instead.
+  slot.ready = new Promise((resolve, reject) => {
+    const iv = setInterval(() => { if (img.naturalWidth) { clearInterval(iv); resolve(); } }, 250);
+    img.addEventListener('error', () => { clearInterval(iv); reject(new Error('Image failed to load')); }, { once: true });
+    slot.onDestroy(() => clearInterval(iv));
+  }).then(() => {
+    timer(slot, seconds);
+    if (!reloadSec) return;
+    const iv = setInterval(() => {
+      const next = new Image();
+      const u = new URL(url);
+      u.searchParams.set('_dw', Date.now());
+      next.onload = () => { img.src = next.src; };
+      next.src = u.href;
+    }, reloadSec * 1000);
+    slot.onDestroy(() => clearInterval(iv));
+  });
+  slot.onDestroy(() => { img.src = ''; });
   return slot;
 }
 
@@ -299,6 +390,14 @@ async function mount(item, layer) {
       if (a.kind === 'youtube') return mountYouTube(layer, { videoId: a.videoId, start: a.start }, max, live);
       if (a.kind === 'video') return mountVideo(layer, a.url, max, a.caption);
       return mountImage(layer, a.url, still, `APOD ${a.date}: ${a.caption}`);
+    }
+    case 'web': {
+      const secs = num(item.duration_sec, num(settings.web_duration_sec, 300));
+      const reload = num(p.reloadSec, 0);
+      if (p.kind === 'image') return mountFeedImage(layer, p.url, secs, reload);
+      if (p.kind === 'video') return mountVideo(layer, p.url, max, null, 0, { hls: p.hls, liveSec: secs });
+      if (p.html) return mountPage(layer, `/api/items/${item.id}/html`, secs, reload, { trusted: false });
+      return mountPage(layer, p.url, secs, reload);
     }
     case 'epic': {
       const e = await api('/api/resolve/epic');

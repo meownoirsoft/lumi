@@ -2,7 +2,7 @@
 
 Turn a Raspberry Pi and any TV or monitor into a "window" that plays a playlist of **YouTube videos** and **NASA space imagery** in order, on a loop. Everything streams; nothing is downloaded.
 
-- **Admin page**, from your phone or laptop: paste a YouTube video or playlist link, search NASA's image and video library, add feeds (Astronomy Picture of the Day, live Earth photos, NASA live streams), and drag to reorder.
+- **Admin page**, from your phone or laptop: paste a YouTube video or playlist link, search NASA's image and video library, add feeds (Astronomy Picture of the Day, live Earth photos, NASA live streams), add web pages and camera feeds, and drag to reorder.
 - **Player**: runs fullscreen on the Pi. Your edits show up within a second.
 
 ---
@@ -99,6 +99,7 @@ Uninstall removes the managed policy file but keeps the kiosk profile.
 | Option A: nothing happened after 10+ minutes | SSH in (or plug in a keyboard) and run `cat /var/log/digital-window-install.log`. The most common cause is no network: check the Wi-Fi name, password and country in Imager. |
 | Can't open the admin page | `systemctl status digital-window` and `journalctl -u digital-window -n 50` on the Pi. Make sure your phone or laptop is on the same network. |
 | Desktop shows but no player | Check the autostart entry: `grep digital ~/.config/labwc/autostart`. You can start the player by hand with `~/digital-window/kiosk/chromium-kiosk.sh`. |
+| A web page shows blank or "refused to connect" on the Pi | Update (re-run the option B command) and reboot, so the kiosk has the extension that lets it show such pages. If it's still blank, the site may need a login or block the Pi; try the camera's direct image or video address instead. |
 | A video is skipped with ⚠ in the admin page | The owner disabled embedding, or the video is private, removed or region-blocked. This can't be worked around; pick another video. |
 | APOD or EPIC fails sometimes | NASA rate-limits `DEMO_KEY`. Put your own key in `~/digital-window/.env` (`NASA_API_KEY=…`), then `sudo systemctl restart digital-window`. |
 | "An app wants to access camera devices" dialog on the TV | Choose **Deny**. The app never uses a camera. Re-run the install command (option B) and reboot; the update turns off Chromium's camera access so the dialog doesn't come back. |
@@ -120,10 +121,31 @@ Uninstall removes the managed policy file but keeps the kiosk profile.
 | NASA image, APOD still | *Still image duration* (default 30 s), with a slow Ken Burns pan |
 | NASA video, APOD video | its full length |
 | EPIC | slideshow of the latest day's Earth images over *EPIC duration* (default 60 s; at least 2 s per image) |
+| Web page, camera image, live camera stream | *Web page duration* (default 5 min) |
+| Web video file | its full length |
 
 Each item in the list has a **Play [auto] s** box: leave it on *auto* for the defaults above, or enter seconds to cut it short (or, for stills and live streams, to show it longer). YouTube and NASA videos also have a **Start** box (`90`, `1:30` or `1m30s`); a `?t=` in a pasted YouTube link fills it in.
 
 APOD (Astronomy Picture of the Day) is re-checked each time it comes round, so it changes daily. The "NASA — whatever is live now" preset plays whatever is currently live on NASA's YouTube channel and is skipped when nothing is. To add other channels, edit `presets.json` (any `UC…` channel ID).
+
+### Web pages and camera feeds
+
+The **Web & cameras** tab takes any web address, or a whole HTML page pasted in. The Pi checks the link once and picks how to show it (or choose under *Show as*):
+
+| Link | Shown as |
+|---|---|
+| A web page | the page, fullscreen. It can't be clicked, and it can't take the player away to another page. |
+| A snapshot image (`.jpg`, `.png`, a camera's `snapshot.cgi`…) | the image. Set **Reload every** (say `5`) for a camera that updates its snapshot. |
+| An MJPEG stream (`video.mjpg`, `mjpg/video.cgi`…) | live video; no reload needed |
+| A video file or HLS stream (`.mp4`, `.webm`, `.m3u8`) | video, muted |
+
+Tips for camera feeds:
+
+- **Use the feed, not the page around it.** Many "live cam" sites wrap the picture in menus, ads and cookie banners. Right-click the picture and copy the image or video address, or find the `.m3u8` in the browser's developer tools (Network tab, filter `m3u8`). Feeds that are YouTube live streams are best added on the YouTube tab.
+- **Cameras on your own network** work with just their address, for example `192.168.1.50/video.mjpg` (it assumes `http://` for IP addresses and `.local` names). A camera that needs a password usually accepts it in the link: `http://user:pass@192.168.1.50/snapshot.jpg`. Anyone who can open the admin page can see links in the playlist.
+- **Sites that refuse to be shown inside another page** (they send `X-Frame-Options` or a CSP `frame-ancestors`) still show on the Pi: the kiosk loads a small extension ([`kiosk/frame-extension`](kiosk/frame-extension)) that lifts that restriction for embedded pages, and lets the player read HLS streams whose servers don't allow other sites (CORS). It only affects the kiosk's own browser profile. In an ordinary browser, *Open player* may show such a page blank; the admin page flags these.
+- **Sound:** videos and streams are muted, but a web page that plays sound by itself will be heard.
+- Pasted HTML runs in a sandbox with no access to the app, so it can't change the playlist.
 
 ### 4K and smooth video on a Pi
 
@@ -182,6 +204,6 @@ There's no login. Anyone on your network who can reach port 3000 can edit the pl
 
 ```bash
 npm run dev     # restarts on file changes
-npm test        # parser + database tests
+npm test        # parser, web-link + database tests
 npm run pack    # build a release bundle in dist/
 ```

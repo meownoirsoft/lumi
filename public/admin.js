@@ -8,8 +8,10 @@ let nowPlayingId = null;
 let dragging = false;
 
 const TYPE_LABEL = {
-  youtube: 'YouTube', youtube_playlist: 'YouTube playlist', nasa_image: 'NASA image', nasa_video: 'NASA video', apod: 'APOD', epic: 'EPIC',
+  youtube: 'YouTube', youtube_playlist: 'YouTube playlist', nasa_image: 'NASA image', nasa_video: 'NASA video', apod: 'APOD', epic: 'EPIC', web: 'Web',
 };
+const WEB_LABEL = { page: 'Web page', image: 'Camera image', video: 'Web video' };
+const typeLabel = (item) => (item.type === 'web' ? (item.payload?.html ? 'HTML' : WEB_LABEL[item.payload?.kind]) : TYPE_LABEL[item.type]) ?? item.type;
 
 async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(path, {
@@ -64,17 +66,32 @@ function render() {
     const thumb = $('.thumb', li);
     const t = thumbFor(item);
     if (t) thumb.style.backgroundImage = `url("${t}")`;
-    else thumb.textContent = TYPE_LABEL[item.type];
+    else thumb.textContent = typeLabel(item);
 
     $('.title', li).textContent = item.title || '(untitled)';
     $('.title', li).title = item.title;
-    $('.type', li).textContent = TYPE_LABEL[item.type] ?? item.type;
+    $('.type', li).textContent = typeLabel(item);
     $('.live', li).hidden = !item.payload?.isLive;
     $('.now', li).hidden = item.id !== nowPlayingId;
     $('.source', li).textContent = item.source;
     if (item.error) {
       $('.error', li).hidden = false;
       $('.error', li).textContent = `⚠ Skipped: ${item.error}`;
+    }
+
+    const p = item.payload ?? {};
+    const note = item.type === 'web' && !p.html && (
+      !p.reachable ? "Couldn't open this link from the Pi to check it, so how it's shown was guessed from the address."
+        : p.embedBlocked ? 'This site blocks being shown inside other pages. The kiosk shows it anyway, but “Open player” in a normal browser may show it blank.'
+          : '');
+    if (note) { $('.note', li).hidden = false; $('.note', li).textContent = note; }
+
+    const reload = $('.reload', li);
+    reload.hidden = !(item.type === 'web' && p.kind !== 'video');
+    if (!reload.hidden) {
+      const input = $('input', reload);
+      input.value = p.reloadSec ?? '';
+      input.addEventListener('change', () => patch(item.id, { reloadSec: input.value || null }));
     }
 
     const start = $('.start', li);
@@ -149,6 +166,24 @@ $('#yt-form').addEventListener('submit', (e) => {
     await add({ kind: 'youtube', input: $('#yt-input').value, isLive: $('#yt-live').checked });
     $('#yt-input').value = '';
     $('#yt-live').checked = false;
+  });
+});
+
+$('#web-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  busy(e.submitter, async () => {
+    await add({ kind: 'web', input: $('#web-input').value, as: $('#web-as').value || undefined, reloadSec: $('#web-reload').value || null });
+    $('#web-input').value = '';
+    $('#web-reload').value = '';
+    $('#web-as').value = '';
+  });
+});
+
+$('#html-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  busy(e.submitter, async () => {
+    await add({ kind: 'web', input: $('#html-input').value }, 'HTML page');
+    $('#html-input').value = '';
   });
 });
 

@@ -21,6 +21,7 @@
         <button role="tab" data-tab="yt" aria-selected="true">YouTube</button>
         <button role="tab" data-tab="lib" aria-selected="false">NASA library</button>
         <button role="tab" data-tab="feeds" aria-selected="false">NASA feeds &amp; live</button>
+        <button role="tab" data-tab="web" aria-selected="false">Web &amp; cameras</button>
       </nav>
 
       <div class="tab" data-panel="yt">
@@ -58,6 +59,35 @@
           <div id="presets"></div>
         </div>
       </div>
+      <div class="tab" data-panel="web" hidden>
+        <form id="web-form" class="web-form">
+          <div class="row">
+            <input id="web-input" type="text" inputmode="url" placeholder="Web page or camera link, e.g. https://… or 192.168.1.50/video.mjpg" autocomplete="off" required>
+            <button class="btn" type="submit">Add</button>
+          </div>
+          <div class="row web-options">
+            <label>Show as
+              <select id="web-as">
+                <option value="">Auto-detect</option>
+                <option value="page">Web page</option>
+                <option value="image">Camera image / MJPEG</option>
+                <option value="video">Video / HLS stream</option>
+              </select>
+            </label>
+            <label title="For snapshot cameras and pages that don't update by themselves">Reload every <input id="web-reload" type="number" min="1" placeholder="never"> s</label>
+          </div>
+        </form>
+        <p class="hint">Shows a web page fullscreen, or a camera feed directly: a snapshot image (<code>.jpg</code>; set <em>Reload every</em>), an MJPEG stream, or a video/HLS (<code>.m3u8</code>) stream.
+          Pages and live streams show for the <em>Web page duration</em> setting (default 5 min) unless you set <em>Play</em>.
+          For a camera's own feed rather than its whole page, right-click the picture on the site and copy the image or video address.</p>
+        <details class="web-html">
+          <summary>Or paste an HTML page</summary>
+          <form id="html-form">
+            <textarea id="html-input" rows="6" placeholder="<!doctype html>…" spellcheck="false" required></textarea>
+            <div class="row"><button class="btn" type="submit">Add HTML page</button></div>
+          </form>
+        </details>
+      </div>
       <p id="msg" role="status"></p>
     </section>
 
@@ -93,6 +123,7 @@
         <label>Still image duration (s) <input name="still_duration_sec" type="number" min="1"></label>
         <label>Live stream duration (s) <input name="live_duration_sec" type="number" min="1"></label>
         <label>EPIC slideshow duration (s) <input name="epic_duration_sec" type="number" min="1"></label>
+        <label>Web page duration (s) <input name="web_duration_sec" type="number" min="1"></label>
         <label class="check"><input name="show_captions" type="checkbox"> Show captions on stills</label>
         <button class="btn" type="submit">Save settings</button>
       </form>
@@ -107,10 +138,14 @@
         <div class="title"></div>
         <div class="sub"><span class="badge type"></span><span class="badge live" hidden>LIVE</span><span class="badge now" hidden>▶ Now playing</span><span class="source"></span></div>
         <div class="error" hidden></div>
+        <div class="note hint" hidden></div>
       </div>
       <div class="timing">
         <label class="start" title="Where the video starts, e.g. 90, 1:30 or 1m30s">
           Start <input type="text" inputmode="numeric" placeholder="0:00">
+        </label>
+        <label class="reload" title="Load the page or image again every so many seconds" hidden>
+          Reload <input type="number" min="1" placeholder="never"> s
         </label>
         <label class="dur" title="Leave blank to play to the end (videos) or use the default (stills)">
           Play <input type="number" min="1" placeholder="auto"> s

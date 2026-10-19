@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { openDb } from './db.js';
 import { parseYouTube, parsePlaylist, parseTime } from './lib/youtube.js';
 import { DEFAULT_SCHEDULE, normalizeSchedule, screenState, makeOverride, timeLabel } from './lib/schedule.js';
+import { parseWebInput, probe, extractTitle, WEB_KINDS, MAX_HTML_BYTES } from './lib/web.js';
 import { searchLibrary, resolveAsset, resolveApod, resolveEpic, resolveChannelLive } from './lib/nasa.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -95,7 +96,9 @@ app.get('/api/info', () => {
 });
 
 // --- Items --------------------------------------------------------------------
-app.get('/api/items', () => db.listItems());
+// Pasted HTML can be large and is fetched by itself (/api/items/:id/html).
+const brief = (item) => (typeof item?.payload?.html === 'string' ? { ...item, payload: { ...item.payload, html: true } } : item);
+app.get('/api/items', () => db.listItems().map(brief));
 app.get('/api/presets', () => presets);
 
 async function youtubeMeta(videoId) {
@@ -174,6 +177,33 @@ app.post('/api/items', async (req) => {
       payload: { nasaId: b.nasaId, url: asset.url, thumb: b.thumb || asset.thumb },
       duration_sec: optInt(b.duration_sec),
     });
+  } else if (kind === 'web') {
+    const web = parseWebInput(b.input);
+    if (!web) throw bad("That doesn't look like a web address (https://…) or an HTML page (starting with <).");
+    const reloadSec = optInt(b.reloadSec);
+    if (web.html) {
+      if (Buffer.byteLength(web.html) > MAX_HTML_BYTES) throw bad(`That HTML is too big (the limit is ${MAX_HTML_BYTES / 1024} KB).`);
+      item = db.addItem({
+        type: 'web',
+        title: b.title || extractTitle(web.html) || 'HTML page',
+        source: 'Pasted HTML',
+        payload: { kind: 'page', html: web.html, reloadSec },
+        duration_sec: optInt(b.duration_sec),
+      });
+    } else {
+      const p = await probe(web.url);
+      const as = WEB_KINDS.includes(b.as) ? b.as : p.kind;
+      const { host, pathname } = new URL(web.url);
+      // Cameras rarely have a page title; their file name ("video.mjpg") says more than the host.
+      const file = decodeURIComponent(pathname.split('/').filter(Boolean).pop() ?? '');
+      item = db.addItem({
+        type: 'web',
+        title: b.title || p.title || (file && as !== 'page' ? file : host),
+        source: host,
+        payload: { kind: as, url: web.url, hls: as === 'video' && p.hls, reloadSec, embedBlocked: as === 'page' && p.embedBlocked, reachable: p.reachable },
+        duration_sec: optInt(b.duration_sec),
+      });
+    }
   } else if (kind === 'apod') {
     item = db.addItem({ type: 'apod', title: 'Astronomy Picture of the Day', source: 'NASA APOD', duration_sec: optInt(b.duration_sec) });
   } else if (kind === 'epic') {
@@ -182,7 +212,7 @@ app.post('/api/items', async (req) => {
     throw bad(`Unknown kind "${kind}".`);
   }
   changed();
-  return item;
+  return brief(item);
 });
 
 // Item types whose start point can be set (live streams and playlists can't seek).
@@ -197,6 +227,10 @@ app.patch('/api/items/:id', async (req, reply) => {
   if ('enabled' in b) patch.enabled = !!b.enabled;
   if ('duration_sec' in b) patch.duration_sec = optInt(b.duration_sec);
   if ('isLive' in b) patch.payload = { ...db.getItem(id).payload, isLive: !!b.isLive };
+  if ('reloadSec' in b) {
+    if (db.getItem(id).type !== 'web') throw bad('Only web items can reload.');
+    patch.payload = { ...(patch.payload ?? db.getItem(id).payload), reloadSec: optInt(b.reloadSec) };
+  }
   if ('start' in b) {
     if (!START_TYPES.has(db.getItem(id).type)) throw bad('This item has no start time.');
     const raw = String(b.start ?? '').trim();
@@ -206,7 +240,19 @@ app.patch('/api/items/:id', async (req, reply) => {
   }
   const item = db.updateItem(id, patch);
   changed();
-  return item;
+  return brief(item);
+});
+
+// Pasted HTML, served from here so the player can frame it.
+app.get('/api/items/:id/html', async (req, reply) => {
+  const item = db.getItem(Number(req.params.id));
+  if (item?.type !== 'web' || typeof item.payload.html !== 'string') return reply.code(404).send({ error: 'Not found' });
+  // The player frames it sandboxed; the CSP keeps it sandboxed when opened directly,
+  // so its scripts never run with this server's origin.
+  return reply.type('text/html; charset=utf-8')
+    .header('Cache-Control', 'no-store')
+    .header('Content-Security-Policy', 'sandbox allow-scripts allow-forms')
+    .send(item.payload.html);
 });
 
 app.delete('/api/items/:id', async (req, reply) => {
