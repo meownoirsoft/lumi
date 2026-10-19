@@ -72,6 +72,7 @@ code { font-size: 12px; }
 .btn:disabled { opacity: .55; cursor: progress; }
 .icon { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 6px; border-radius: 6px; }
 .icon:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.icon.del.confirm { color: #fff; background: var(--danger); font-size: 13px; font-weight: 600; padding: 6px 10px; white-space: nowrap; }
 
 input[type=text], input[type=search], input[type=number], select {
   font: inherit;

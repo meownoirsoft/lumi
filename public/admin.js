@@ -6,6 +6,7 @@ const tpl = $('#item-tpl');
 let items = [];
 let nowPlayingId = null;
 let dragging = false;
+let confirmDeleteId = null;   // item whose ✕ has been tapped once
 
 const TYPE_LABEL = {
   youtube: 'YouTube', youtube_playlist: 'YouTube playlist', nasa_image: 'NASA image', nasa_video: 'NASA video', apod: 'APOD', epic: 'EPIC', web: 'Web',
@@ -111,7 +112,17 @@ function render() {
     en.checked = item.enabled;
     en.addEventListener('change', () => patch(item.id, { enabled: en.checked }));
 
-    $('.del', li).addEventListener('click', async () => {
+    // First tap arms the button ("Delete?"), a second tap deletes.
+    const del = $('.del', li);
+    if (item.id === confirmDeleteId) {
+      del.classList.add('confirm');
+      del.textContent = 'Delete?';
+      del.title = 'Tap again to delete';
+      del.setAttribute('aria-label', `Confirm: delete ${item.title || 'this item'}`);
+    }
+    del.addEventListener('click', async () => {
+      if (confirmDeleteId !== item.id) return armDelete(item.id);
+      armDelete(null);
       try { await api(`/api/items/${item.id}`, { method: 'DELETE' }); } catch (e) { say(e.message, 'err'); }
       load();
     });
@@ -120,6 +131,18 @@ function render() {
   $('#count').textContent = items.length ? `(${items.filter((i) => i.enabled).length} of ${items.length} enabled)` : '';
   $('#empty').hidden = items.length > 0;
 }
+
+// Kept outside the list so re-renders (now-playing updates) don't disarm it.
+function armDelete(id) {
+  clearTimeout(armDelete.t);
+  confirmDeleteId = id;
+  if (id != null) armDelete.t = setTimeout(() => armDelete(null), 4000);
+  render();
+}
+// Tapping anywhere else cancels.
+document.addEventListener('click', (e) => {
+  if (confirmDeleteId != null && !e.target.closest('.del')) armDelete(null);
+});
 
 async function load() {
   try {
